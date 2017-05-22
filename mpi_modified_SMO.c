@@ -390,13 +390,15 @@ void updateParams(SMO *smo, SMO *local_smo, double *local_alphas, double *local_
 	MPI_Bcast(smo, 1, smoType, 0, MPI_COMM_WORLD);
 
 
-	if (my_rank == smo->z1) 
+	if (my_rank == smo->z1) {
 		getValueFromIndex(I_UP, local_alphas, local_ylabel, local_Err, smo, local_smo->I_up);
+	}
 	updateToRoot(smo->z1, smo);
 	MPI_Bcast(smo, 1, smoType, 0, MPI_COMM_WORLD);
 
-	if (my_rank == smo->z2)
+	if (my_rank == smo->z2) {
 		getValueFromIndex(I_LOW, local_alphas, local_ylabel, local_Err, smo, local_smo->I_low);
+	}
 	updateToRoot(smo->z2, smo);
 	MPI_Bcast(smo, 1, smoType, 0, MPI_COMM_WORLD);
 }
@@ -443,9 +445,9 @@ void initMPI()
 */
 double* modified_SMO(double X[], int local_Y[], int local_size, int dim, double C, double sigma, double tau)
 {
-	int i;
+	int i, j;
 	double local_ylabel[local_size];
-	double local_b = 0.0;
+	double b = 0.0;
 	double* local_alphas;
 	double local_Err[local_size];
 	int numChanged;
@@ -463,19 +465,12 @@ double* modified_SMO(double X[], int local_Y[], int local_size, int dim, double 
 	}
 
 	/* initialize b_up, I_up, b_low, I_low, DualityGap */
-	local_DualityGap = computeDualityGap(local_Err, C, local_b, local_alphas, local_ylabel, local_size);
+	local_DualityGap = computeDualityGap(local_Err, C, b, local_alphas, local_ylabel, local_size);
 	computeBupIup(local_Err, C, local_alphas, local_ylabel, local_size, &local_smo.b_up, &local_smo.I_up);
 	computeBlowIlow(local_Err, C, local_alphas, local_ylabel, local_size, &local_smo.b_low, &local_smo.I_low);
 
 	MPI_Reduce(&local_DualityGap, &DualityGap, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 	MPI_Bcast(&DualityGap, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-
-	PRINT("----I_up: %d, I_low: %d, b_up: %lf, b_low: %lf----\n", local_smo.I_up, local_smo.I_low, local_smo.b_up, local_smo.b_low);
-
-	
-	PRINT("alpha1: %lf, y1: %d, F1: %lf\n", smo.alpha1, smo.y1, smo.F1);
-	PRINT("alpha2: %lf, y2: %d, F2: %lf\n", smo.alpha2, smo.y2, smo.F2);
-
 
 	numChanged = 1;
 
@@ -489,6 +484,14 @@ double* modified_SMO(double X[], int local_Y[], int local_size, int dim, double 
 		}
 
 		MPI_Bcast(&numChanged, 1, MPI_INT, 0, MPI_COMM_WORLD);
+		MPI_Bcast(&smo, 1, smoType, 0, MPI_COMM_WORLD);
+
+
+		if (my_rank == 0) {
+			PRINT("----I_up: %d, I_low: %d, b_up: %lf, b_low: %lf,Gap: %lf----\n", smo.I_up, smo.I_low, smo.b_up, smo.b_low,DualityGap);
+			PRINT("alpha1: %lf, y1: %d, F1: %lf\n", smo.alpha1, smo.y1, smo.F1);
+			PRINT("alpha2: %lf, y2: %d, F2: %lf\n", smo.alpha2, smo.y2, smo.F2);
+		}
 
 		if (my_rank == smo.z1) {
 			smo.a1_old = local_alphas[local_smo.I_up];
@@ -504,29 +507,27 @@ double* modified_SMO(double X[], int local_Y[], int local_size, int dim, double 
 		updateToRoot(smo.z2, &smo);
 		MPI_Bcast(&smo, 1, smoType, 0, MPI_COMM_WORLD);
 
-		PRINT("%d %d %d %d %lf %lf %lf %lf %d %d %lf %lf %lf %lf %lf %lf %lf\n", smo.I_up, smo.I_low, smo.z1, smo.z2, smo.b_up, smo.b_low, smo.alpha1, smo.alpha2, smo.y1, smo.y2, smo.F1, smo.F2, smo.a1, smo.a2, smo.a1_old, smo.a2_old, smo.Dual);
+//		PRINT("%d %d %d %d %lf %lf %lf %lf %d %d %lf %lf %lf %lf %lf %lf %lf\n", smo.I_up, smo.I_low, smo.z1, smo.z2, smo.b_up, smo.b_low, smo.alpha1, smo.alpha2, smo.y1, smo.y2, smo.F1, smo.F2, smo.a1, smo.a2, smo.a1_old, smo.a2_old, smo.Dual);
 
 		/* update Err[i] */
-		for (i = 0; i < local_size; i++) {
-			local_Err[i] += (local_alphas[local_smo.I_up] - smo.a1_old) * local_ylabel[local_smo.I_up] * kernel(X, dim, smo.I_up, i, 'g', sigma) 
-				+ (local_alphas[local_smo.I_low] - smo.a2_old) * local_ylabel[local_smo.I_low] * kernel(X, dim, smo.I_low, i, 'g', sigma);  
+		for (i = 0, j = my_rank; i < local_size; i++, j += comm_sz) {
+			local_Err[i] += (smo.a1 - smo.a1_old) * smo.y1 * kernel(X, dim, smo.I_up, j, 'g', sigma) 
+				+ (smo.a2 - smo.a2_old) * smo.y2 * kernel(X, dim, smo.I_low, j, 'g', sigma);  
 		}
 		
 		computeBupIup(local_Err, C, local_alphas, local_ylabel, local_size, &local_smo.b_up, &local_smo.I_up);
 		computeBlowIlow(local_Err, C, local_alphas, local_ylabel, local_size, &local_smo.b_low, &local_smo.I_low);
 
-		local_b = (local_smo.b_low + local_smo.b_up) / 2;
-		local_DualityGap = computeDualityGap(local_Err, C, local_b, local_alphas, local_ylabel, local_size);
+		b = (smo.b_low + smo.b_up) / 2;
+
+		local_DualityGap = computeDualityGap(local_Err, C, b, local_alphas, local_ylabel, local_size);
 
 		MPI_Reduce(&local_DualityGap, &DualityGap, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 		MPI_Bcast(&DualityGap, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-		
-		PRINT("alpha1: %lf, y1: %d, F1: %lf, Gap: %lf\n", smo.alpha1, smo.y1, smo.F1, DualityGap);
-		PRINT("alpha2: %lf, y2: %d, F2: %lf\n", smo.alpha2, smo.y2, smo.F2);
 	}
 
-	local_b = (local_smo.b_low + local_smo.b_up) / 2;
-	local_DualityGap = computeDualityGap(local_Err, C, local_b, local_alphas, local_ylabel, local_size);
+	b = (smo.b_low + smo.b_up) / 2;
+	local_DualityGap = computeDualityGap(local_Err, C, b, local_alphas, local_ylabel, local_size);
 
 	MPI_Reduce(&local_DualityGap, &DualityGap, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 	MPI_Bcast(&DualityGap, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
@@ -604,8 +605,8 @@ int main(int argc, char* argv[])
 			fscanf(pFile, "%d", &y[i]);
 		
 	      	for (i = 1; i < comm_sz; i++) {
-      			for (k = i, j = 0; k < size; k += comm_sz)
-      				local_y[j++] = y[k];
+      			for (k = i, j = 0; k < size; k += comm_sz, j++)
+      				local_y[j] = y[k];
 
 			MPI_Send(local_y, local_size, MPI_INT, i, 0, MPI_COMM_WORLD);
 		}
