@@ -1,37 +1,42 @@
 /** File:     modified_SMO.c
  * Purpose:  Parallel Programming 2017 Final Project: Training Support Vector Machine on multiprocessors and GPUs
+ *			 the serial version.
  *
  * Compile:  gcc -Wall -o modified_SMO modified_SMO.c -lm
- * Run:      ex: ./modified_SMO test1_X.txt test1_Y.txt 863 2 2 1 0.1 0.001
- *           test1_X.txt: the coordinates of training data set
- *           test1_Y.txt: the labels of training data set
- *           863  : number of training data
- *           2    : dimension of feature space
- *           2    : number of label class
+ * Run:      ex: ./modified_SMO ./data/train-mnist ./data/train-mnist.model 10000 784 1 0.01 0.001
+ *           ./data/train-mnist: input training data set
+ *           ./data/train-mnist.model: output model data
+ *           10000  : number of training data
+ *           784    : dimension of feature space
  *           1    : C
- *           0.1  : sigma for gaussian kernel
+ *           0.01  : gamma for gaussian kernel
  *           0.001: eps
  *
  * Notes:
  *    1.  Follow the paper "Parallel Sequential Minimal Optimization for the Training of Support Vector Machines" by L.J. Cao et al. 2006
- *    2.  Use one-against-all method to implement multiclass version
+ *    2.  Use one-against-all method to implement multiclass version (removed)
  *    3.  Modify eps to balance the accuracy and speed (recommend value: 0.001)
+ *	  4.  Input file is identical with "libsvm" format
+ *    5.  Output file includes support vector
  *
- * Output: Lagrangian parameter alphas
+ * Output: Lagrangian parameter alphas + support vector = model data 
  *
  * Author: Wei-Hsiang Teng
  * History: 2017/4/17       created
  *          2017/4/27       modified for multiclass using one-against-all method
  *	        2017/5/4	    add eps to decrease the accuracy but accelerate computing 
+ *			2017/5/24       modify the input file to fit "libsvm" format and add support vector to output file
  */  
 #include <stdlib.h>
 #include <stdio.h>
-#include <sys/time.h> // for estimate elapsed time
+#include <sys/time.h> /* for estimate elapsed time */
 #include <math.h>  /* for exp() */
+#include <string.h>
 
 #define MAX(x, y) ((x)>(y))?(x):(y)
 #define MIN(x, y) ((x)<(y))?(x):(y)
 #define ABS(a)      (((a) < 0) ? -(a) : (a))
+#define STR_SIZE 1000000
 #define GET_TIME(now) { \
    struct timeval t; \
    gettimeofday(&t, NULL); \
@@ -39,45 +44,29 @@
 }
 
 /* global variables */
-double eps;
+float eps;
 
 /**
-* name:        kernel
+* name:        rbf_kernel
 *
-* description: kernel generates kernel function K(X_i, X_j) of X which could be linear or gaussian.
+* description: kernel generates kernel function K(X_i, X_j) of X which is gaussian.
 * input:       X[]: coordinates of training data set
 *              dim: number of dimension of coordinates
 *              i, j: index of kernel function K(X_i, X_j)
-*              c: 'l' for linear, 'g' for gaussian
-*              sigma: deviation for guassian kernel
+*              gamma: parameter for guassian kernel: exp(-gamma*|X_i - X_j|^2) 
 *
 * output:      K(X_i, X_j)      
 * 
 */
-double kernel(double X[], int dim, int i, int j, char c, double sigma)
+float rbf_kernel(float X[], int dim, int i, int j, float gamma)
 {
-	double ker = 0.0;
+	float ker = 0.0;
 	int m;
-	if (c == 'l')
+	for (m = 0; m < dim; m++)
 	{
-		for (m = 0; m < dim; m++)
-		{
-			ker += X[i * dim + m] * X[j * dim + m];
-		}
-	} else if (c == 'g')
-	{
-		for (m = 0; m < dim; m++)
-		{
-			ker += (X[i * dim + m] - X[j * dim + m]) * (X[i * dim + m] - X[j * dim + m]);
-		}
-		ker = exp(-1 * ker / 2 / sigma / sigma);
-	} else 
-	{
-		for (m = 0; m < dim; m++)
-		{
-			ker += X[i * dim + m] * X[j * dim + m];
-		}
+		ker += (X[i * dim + m] - X[j * dim + m]) * (X[i * dim + m] - X[j * dim + m]);
 	}
+	ker = exp(-1 * gamma * ker);
 	
 	return ker;
 }
@@ -96,9 +85,9 @@ double kernel(double X[], int dim, int i, int j, char c, double sigma)
 * output:      DualityGap      
 * 
 */
-double computeDualityGap(double Err[], double C, double b, double alphas[], double ylabel[], int size)
+float computeDualityGap(float Err[], float C, float b, float alphas[], int ylabel[], int size)
 {
-	double DualityGap = 0;
+	float DualityGap = 0;
 	int i;
 	for (i = 0; i < size; i++)
 	{
@@ -129,7 +118,7 @@ double computeDualityGap(double Err[], double C, double b, double alphas[], doub
 * output:      None      
 * 
 */
-void computeBupIup(double Err[], double C, double alphas[], double ylabel[], int size, double *b_up, int *I_up)
+void computeBupIup(float Err[], float C, float alphas[], int ylabel[], int size, float *b_up, int *I_up)
 {
 	int i;
 	*b_up = 100000000;
@@ -179,7 +168,7 @@ void computeBupIup(double Err[], double C, double alphas[], double ylabel[], int
 * output:      None      
 * 
 */
-void computeBlowIlow(double Err[], double C, double alphas[], double ylabel[], int size, double *b_low, int *I_low)
+void computeBlowIlow(float Err[], float C, float alphas[], int ylabel[], int size, float *b_low, int *I_low)
 {
 	int i;
 	*b_low = -100000000;
@@ -218,26 +207,43 @@ void computeBlowIlow(double Err[], double C, double alphas[], double ylabel[], i
 * name:        computeNumChaned
 *
 * description: computeNumChaned implements Procedure takeStep() in page 19.
-* input:       alpha1: alphas[I_up]
+* input:       I_up: index for minimum of Err in group I0, I1, I2
+*			   I_low: index for maximum of Err in group I0, I3, I4
+*			   alpha1: alphas[I_up]
 *              alpha2: alphas[I_low]
 *              X[]: coordinates of training data set
-*              ylabel[]: class label for each training data
-*			   Err[]: error function (6)
+*              y1, y2: Y[I_up], Y[I_low]
+*			   F1, F2: Err[I_up], Err[I_low]
 *              dim: number of dimension of coordinates
 *              Dual: see function (7)
 *              C: regularization
-*              sigma: deviation for guassian kernel
+*              para_gamma: parameter for guassian kernel
+*			   a1, a2: the renewed alpha1, alphas2
 *	
 * output:      numChanged      
 * 
 */
-int computeNumChaned(int I_up, int I_low, double alpha1, double alpha2, double X[], int y1, int y2, double F1, double F2, int dim, double *Dual, double C, double sigma, double* a1, double* a2)
+int computeNumChaned(int I_up, 
+                     int I_low, 
+					 float alpha1, 
+					 float alpha2, 
+					 float X[], 
+					 int y1, 
+					 int y2, 
+					 float F1, 
+					 float F2, 
+					 int dim, 
+					 float *Dual, 
+					 float C, 
+					 float para_gamma, 
+					 float* a1, 
+					 float* a2)
 {
 	if (I_up == I_low) return 0;
 	int s = y1 * y2;
-	double gamma;
-	double L, H, slope, change;
-	double k11, k12, k22, eta;
+	float gamma;
+	float L, H, slope, change;
+	float k11, k12, k22, eta;
 	
 	if (y1 == y2)
 		gamma = alpha1 + alpha2;
@@ -255,9 +261,9 @@ int computeNumChaned(int I_up, int I_low, double alpha1, double alpha2, double X
 	
 	if (H <= L) return 0;
 	
-	k11 = kernel(X, dim, I_up, I_up, 'g', sigma);
-	k22 = kernel(X, dim, I_low, I_low, 'g', sigma);
-	k12 = kernel(X, dim, I_up, I_low, 'g', sigma);
+	k11 = rbf_kernel(X, dim, I_up, I_up, para_gamma);
+	k22 = rbf_kernel(X, dim, I_low, I_low, para_gamma);
+	k12 = rbf_kernel(X, dim, I_up, I_low, para_gamma);
 	eta = 2*k12 - k11 - k22;
 	
 	if (eta < eps * (k11 + k22))
@@ -301,42 +307,40 @@ int computeNumChaned(int I_up, int I_low, double alpha1, double alpha2, double X
 *
 * description: modified_SMO implements Pseudo-code for the serial SMO in page 19.
 * input:       X[]: coordinates of training data set
-*              Y[]: class label of [0 1] for each training data 
+*              Y[]: class label of [-1 1] for each training data 
 *              size: size of training data set
 *              dim: number of dimension of coordinates
 *              C: regularization
-*			   sigma: deviation for guassian kernel
+*			   gamma: parameter for guassian kernel
 *              tau: condition for convergence
 *	
 * output:      alphas[]     
 * 
 */
-double* modified_SMO(double X[], int Y[], int size, int dim, double C, double sigma, double tau)
+float* modified_SMO(float X[], int Y[], int size, int dim, float C, float gamma, float tau)
 {
 	int i;
-	double ylabel[size];
-	double b = 0.0;
-	double* alphas;
-	double Err[size];
-	double b_up, b_low, alpha1, alpha2, a1 = 0, a2 = 0, F1 = 0, F2 = 0;
+	float b = 0.0;
+	float* alphas;
+	float Err[size];
+	float b_up, b_low, alpha1, alpha2, a1 = 0, a2 = 0, F1 = 0, F2 = 0;
 	int I_up, I_low, y1 = 0, y2 = 0;
 	int numChanged;
-	double Dual = 0, DualityGap;
-	double a1_old, a2_old;
-	
-	alphas = (double *)malloc((size + 1)*sizeof(double));
+	float Dual = 0, DualityGap;
+	float a1_old, a2_old;
+	int num_iter = 0;
+
+	alphas = (float *)malloc(size*sizeof(float));
 	
 	/* initialize alpha, Err, Dual */
 	for (i = 0; i < size; i++) {
-		if (Y[i] == 0) ylabel[i] = -1;
-		else ylabel[i] = 1;
 		alphas[i] = 0.0;
-		Err[i] = -1*ylabel[i];
+		Err[i] = -1*Y[i];
 	}
 	/* initialize b_up, I_up, b_low, I_low, DualityGap */
-	DualityGap = computeDualityGap(Err, C, b, alphas, ylabel, size);
-	computeBupIup(Err, C, alphas, ylabel, size, &b_up, &I_up);
-	computeBlowIlow(Err, C, alphas, ylabel, size, &b_low, &I_low);
+	DualityGap = computeDualityGap(Err, C, b, alphas, Y, size);
+	computeBupIup(Err, C, alphas, Y, size, &b_up, &I_up);
+	computeBlowIlow(Err, C, alphas, Y, size, &b_low, &I_low);
 	
 	numChanged = 1;
 
@@ -344,12 +348,12 @@ double* modified_SMO(double X[], int Y[], int size, int dim, double C, double si
 	{
 		alpha1 = alphas[I_up];
 		alpha2 = alphas[I_low];		
-		y1 = ylabel[I_up];
-		y2 = ylabel[I_low];
+		y1 = Y[I_up];
+		y2 = Y[I_low];
 		F1 = Err[I_up];
 		F2 = Err[I_low];
 		
-		numChanged = computeNumChaned(I_up, I_low, alpha1, alpha2, X, y1, y2, F1, F2, dim, &Dual, C, sigma, &a1, &a2);
+		numChanged = computeNumChaned(I_up, I_low, alpha1, alpha2, X, y1, y2, F1, F2, dim, &Dual, C, gamma, &a1, &a2);
 		
 		a1_old = alphas[I_up];
 		a2_old = alphas[I_low];
@@ -359,107 +363,139 @@ double* modified_SMO(double X[], int Y[], int size, int dim, double C, double si
 		
 		/* update Err[i] */
 		for (i = 0; i < size; i++) {
-			Err[i] += (alphas[I_up] - a1_old) * ylabel[I_up] * kernel(X, dim, I_up, i, 'g', sigma) 
-				+ (alphas[I_low] - a2_old) * ylabel[I_low] * kernel(X, dim, I_low, i, 'g', sigma);  
+			Err[i] += (alphas[I_up] - a1_old) * Y[I_up] * rbf_kernel(X, dim, I_up, i, gamma) 
+				+ (alphas[I_low] - a2_old) * Y[I_low] * rbf_kernel(X, dim, I_low, i, gamma);  
 		}
 		
-		computeBupIup(Err, C, alphas, ylabel, size, &b_up, &I_up);
-		computeBlowIlow(Err, C, alphas, ylabel, size, &b_low, &I_low);
+		computeBupIup(Err, C, alphas, Y, size, &b_up, &I_up);
+		computeBlowIlow(Err, C, alphas, Y, size, &b_low, &I_low);
 		b = (b_low + b_up) / 2;
-		DualityGap = computeDualityGap(Err, C, b, alphas, ylabel, size);
+		DualityGap = computeDualityGap(Err, C, b, alphas, Y, size);
+		num_iter++;
+		printf("itertion: %d\n", num_iter);
 	}
 	
 	b = (b_low + b_up) / 2;
-	DualityGap = computeDualityGap(Err, C, b, alphas, ylabel, size);
-	alphas[size] = b;
+	DualityGap = computeDualityGap(Err, C, b, alphas, Y, size);
 	
 	return alphas;
 }
 
-
-
-int main(int argc, char* argv[])
+void read_data(char* file, float x[], int y[], int size, int dim)
 {
-	int size, dim, class;
-	int i, k;
-	double* x;
-	int *y, *temp_y;
-	FILE *pFile, *pFile1; 
-	double C;
-	double sigma;
-	double tau;
-	double* alphas;
-	double b;
-	double start, end;
-	char* filename;
-	//double* p;
+	int i;
+	char s[STR_SIZE];
+	const char* delim = ":";
+    char *token;
+	int index = 0, pre_index = 0;
+	FILE *pFile;
 	
-	if (argc < 8) {
-		printf("%s X_file Y_file paras_file Data_size, Data_dim, Data_class C sigma eps\n", argv[0]);
-		exit(-1);
-	}
-	
-	filename = argv[3];
-	size = atoi(argv[4]);
-	dim = atoi(argv[5]);
-	class = atoi(argv[6]);
-	C = atof(argv[7]);
-	sigma = atof(argv[8]);
-	eps = atof(argv[9]);
-	
-	x = (double *)malloc(size*dim*sizeof(double));
-	y = (int *)malloc(size*sizeof(double));
-	temp_y = (int *)malloc(size*sizeof(double));
-	alphas = (double *)malloc((size+1)*sizeof(double));
-	
-	pFile = fopen(argv[1], "r"); 
+	pFile = fopen(file, "r"); 
 	if (pFile == NULL) {
-		printf("can't open %s\n", argv[1]);
+		printf("can't open %s\n", file);
 		exit(-1);
 	}
-	for (i = 0; i < size*dim; i++)
-		fscanf(pFile, "%lf", &x[i]);
 	
-	pFile = fopen(argv[2], "r"); 
-	if (pFile == NULL) {
-		printf("can't open %s\n", argv[2]);
-		exit(-1);
-	}
 	for (i = 0; i < size; i++)
-		fscanf(pFile, "%d", &y[i]);
+	{
+		int cnt = 0;
+		fgets(s, sizeof(s), pFile);
+	    /* get the first token */
+	    token = strtok(s, delim);
+	    sscanf(token, "%d %d", &y[i], &index);
+	    /* walk through other tokens */
+	    while( token != NULL ) 
+	    {
+			if (cnt == 0) {
+				token = strtok(NULL, delim);
+			}
+			if (index > 0)
+				sscanf(token, "%f %d", &x[i * dim + index - 1], &pre_index);
+			index = pre_index;
+		    token = strtok(NULL, delim);			
+			cnt++;
+	    }
+	}
+	fclose(pFile);
+}
+
+void save_model(char* filename, float alphas[], float x[], int y[], float gamma, int size, int dim)
+{
+	FILE *pFile1; 
+	int i, j;
+	int total_sv = 0;
 	
-	/* for save the parameters */
 	pFile1 = fopen(filename, "w"); 
 	if (pFile1 == NULL) {
 		printf("can't open %s\n", filename);
 		exit(-1);
-	} 
+	}
+	for (i = 0; i < size; i++) {
+		if (alphas[i] != 0)
+			total_sv++;
+	}
+	fprintf(pFile1, "%d %f\n", total_sv, gamma);
+	
+	for (i = 0; i < size; i++) {
+		if (alphas[i] != 0)
+		{   
+			fprintf(pFile1, "%f", alphas[i]*y[i]);
+			for (j = 0; j < dim; j++)
+			{
+				if (x[i * dim + j] != 0)
+					fprintf(pFile1, " %d:%f", j + 1, x[i * dim + j]);
+			}
+			fprintf(pFile1, "\n");
+		}	
+	}
+	printf("total sv: %d\n", total_sv);
+	
+	fclose(pFile1);
+}
+
+int main(int argc, char* argv[])
+{
+	int size, dim;
+	int k;
+	float* x;
+	int *y;
+	float C;
+	float gamma;
+	float tau;
+	float* alphas;
+	float start, end;
+
+	if (argc < 8) {
+		printf("%s data_file model_file data_size data_dim C gamma eps\n", argv[0]);
+		exit(-1);
+	}
+	
+	size = atoi(argv[3]);
+	dim = atoi(argv[4]);
+	C = atof(argv[5]);
+	gamma = atof(argv[6]);
+	eps = atof(argv[7]);
+	
+	x = (float *)malloc(size*dim*sizeof(float));
+	memset(x, 0, sizeof(float)*size*dim);
+	y = (int *)malloc(size*sizeof(int));
+	alphas = (float *)malloc(size*sizeof(float));
+	
+	read_data(argv[1], x, y, size, dim);
+
 	/* start the SMO algorithm */
 	tau = 0.000001;
 
 	GET_TIME(start);
-	/* one-against-all method */
-	for (i = 0; i < class; i++)
-	{
-		for (k = 0; k < size; k++) {
-			if (y[k] == i) temp_y[k] = 1;
-			else temp_y[k] = 0;
-		}
-		alphas = modified_SMO(x, temp_y, size, dim, C, sigma, tau);
-		b = -1 * alphas[size];
-		
-		/* save the result */
-		for (k = 0; k < size; k++) {
-			fprintf(pFile1, "%lf ", alphas[k]);
-		}
-		fprintf(pFile1, "%lf\n", b);
-	}
+	alphas = modified_SMO(x, y, size, dim, C, gamma, tau);
 	GET_TIME(end);
 	printf("The elapsed time is %e seconds\n", end - start);
+	
+	/* save the result */
+	save_model(argv[2], alphas, x, y, gamma, size, dim);
 
 	free(x);
 	free(y);
-	fclose(pFile);
-	fclose(pFile1);
+	
 	return 0;
 }
