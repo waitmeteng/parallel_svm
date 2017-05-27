@@ -19,6 +19,7 @@
  *
  * Author: Wei-Hsiang Teng
  * History: 2017/5/25       created
+ *			2017/5/27		use the shared memory of GPU to speed up the calculation.
  *          
  */  
 #include <stdlib.h>
@@ -31,6 +32,7 @@
 #define MIN(x, y) ((x)<(y))?(x):(y)
 #define ABS(a)      (((a) < 0) ? -(a) : (a))
 #define STR_SIZE 1000000
+#define TILE_SIZE 16
 
 #define CHECK(call)                                                            \
 {                                                                              \
@@ -61,6 +63,7 @@ float eps;
 */
 __global__ void rbf_kernel(float* X, float* K, int dim, int size, float gamma)
 {
+#if 0
 	int tx = threadIdx.x + blockIdx.x * blockDim.x;
 	int ty = threadIdx.y + blockIdx.y * blockDim.y;
 	
@@ -70,9 +73,33 @@ __global__ void rbf_kernel(float* X, float* K, int dim, int size, float gamma)
 	{
 		ker += (X[tx * dim + k] - X[ty * dim + k]) * (X[tx * dim + k] - X[ty * dim + k]);
 	}
-	K[tx * size + ty] = exp(-1 * gamma * ker);
+	K[ty * size + tx] = exp(-1 * gamma * ker);
 	//if (ty == 0)
 	//	printf("(%d %d): %f\n", tx, ty, K[tx * size + ty]);
+#else
+	__shared__ float Xs1[TILE_SIZE][TILE_SIZE];
+	__shared__ float Xs2[TILE_SIZE][TILE_SIZE];
+
+	int bx = blockIdx.x;
+	int by = blockIdx.y;
+	int tx = threadIdx.x;
+	int ty = threadIdx.y;
+
+	int Row = by * TILE_SIZE + ty;
+	int Col = bx * TILE_SIZE + tx;
+
+	float ker = 0;
+	for (int m = 0; m < dim/TILE_SIZE; m++) {
+		Xs1[ty][tx] = X[Row*dim + (m*TILE_SIZE + tx)];
+		Xs2[ty][tx] = X[Col*dim + (m*TILE_SIZE + ty)];
+		__syncthreads();
+		for (int k = 0; k < TILE_SIZE; k++) {
+			ker += (Xs1[ty][k] - Xs2[k][tx]) * (Xs1[ty][k] - Xs2[k][tx]);
+		}
+		__syncthreads();
+	}
+	K[Row * size + Col] = exp(-1 * gamma * ker);
+#endif
 }
 
 /**
@@ -498,7 +525,7 @@ int main(int argc, char* argv[])
 	/* start the SMO algorithm */
 	tau = 0.000001;
 
-	dim3 block(16, 16);
+	dim3 block(TILE_SIZE, TILE_SIZE);
 	dim3 grid((size + block.x - 1)/block.x, (size + block.y - 1)/block.y);
 	CHECK(cudaDeviceSynchronize());
 	
