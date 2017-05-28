@@ -19,7 +19,7 @@
  *
  * Author: Wei-Hsiang Teng
  * History: 2017/5/24       created
- *          
+ *          2017/5/28       add execution time profiling
  */  
 #include <stdlib.h>
 #include <stdio.h>
@@ -35,6 +35,14 @@
    struct timeval t; \
    gettimeofday(&t, NULL); \
    now = t.tv_sec + t.tv_usec/1000000.0; \
+}
+
+inline double seconds()
+{
+    struct timeval tp;
+    //struct timezone tzp;
+    int i = gettimeofday(&tp, NULL);
+    return ((double)tp.tv_sec + (double)tp.tv_usec * 1.e-6);
 }
 
 /* global variables */
@@ -330,6 +338,8 @@ float* modified_SMO(float X[], int Y[], int size, int dim, float C, float gamma,
 	int numChanged;
 	float Dual = 0, DualityGap;
 	float a1_old, a2_old;
+	double s1, s2, s3, s4;
+	double t1 = 0, t2 = 0, t3 = 0, t4 = 0;
 	int num_iter = 0;
 
 	alphas = (float *)malloc(size*sizeof(float));
@@ -355,7 +365,9 @@ float* modified_SMO(float X[], int Y[], int size, int dim, float C, float gamma,
 		F1 = Err[I_up];
 		F2 = Err[I_low];
 		
+		s1 = seconds();
 		numChanged = computeNumChaned(I_up, I_low, alpha1, alpha2, X, y1, y2, F1, F2, dim, &Dual, C, gamma, &a1, &a2, K);
+		t1 += (seconds() - s1);
 		
 		a1_old = alphas[I_up];
 		a2_old = alphas[I_low];
@@ -364,22 +376,32 @@ float* modified_SMO(float X[], int Y[], int size, int dim, float C, float gamma,
 		alphas[I_low] = a2;
 		
 		/* update Err[i] */
+		s2 = seconds();
 		for (i = 0; i < size; i++) {
 			Err[i] += (alphas[I_up] - a1_old) * Y[I_up] * K[I_up][i] 
 				+ (alphas[I_low] - a2_old) * Y[I_low] * K[I_low][i];  
 		}
+		t2 += (seconds() - s2);
 		
+		s3 = seconds();
 		computeBupIup(Err, C, alphas, Y, size, &b_up, &I_up);
 		computeBlowIlow(Err, C, alphas, Y, size, &b_low, &I_low);
 		b = (b_low + b_up) / 2;
+		t3 += (seconds() - s3);
+		
+		s4 = seconds();
 		DualityGap = computeDualityGap(Err, C, b, alphas, Y, size);
+		t4 += (seconds() - s4);
 		num_iter++;
-		printf("itertion: %d\n", num_iter);
+		//printf("itertion: %d\n", num_iter);
 	}
 	
 	b = (b_low + b_up) / 2;
 	DualityGap = computeDualityGap(Err, C, b, alphas, Y, size);
-	
+	printf("computeNumChaned    : %lf secs\n", t1);
+	printf("update f_i          : %lf secs\n", t2);
+	printf("update b_up, b_low  : %lf secs\n", t3);
+	printf("computeDualityGap   : %lf secs\n", t4);
 	return alphas;
 }
 
@@ -465,7 +487,7 @@ int main(int argc, char* argv[])
 	float gamma;
 	float tau;
 	float* alphas;
-	float start, end;
+	double start, end;
 	float **kernel;
 	if (argc < 8) {
 		printf("%s data_file model_file data_size data_dim C gamma eps\n", argv[0]);
@@ -491,11 +513,12 @@ int main(int argc, char* argv[])
 	/* start the SMO algorithm */
 	tau = 0.000001;
 
-	GET_TIME(start);
+	start = seconds();
 	rbf_kernel(x, kernel, dim, size, gamma);
+	printf("rbf_kernel          : %lf secs\n", seconds() - start);
 	alphas = modified_SMO(x, y, size, dim, C, gamma, tau, kernel);
-	GET_TIME(end);
-	printf("The elapsed time is %e seconds\n", end - start);
+	end = seconds();
+	printf("The total elapsed time is %lf seconds\n", end - start);
 	
 	/* save the result */
 	save_model(argv[2], alphas, x, y, gamma, size, dim);
