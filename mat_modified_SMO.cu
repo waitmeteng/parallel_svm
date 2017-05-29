@@ -49,6 +49,14 @@
 /* global variables */
 float eps;
 
+inline double seconds()
+{
+    struct timeval tp;
+    //struct timezone tzp;
+    int i = gettimeofday(&tp, NULL);
+    return ((double)tp.tv_sec + (double)tp.tv_usec * 1.e-6);
+}
+
 /**
 * name:        rbf_kernel
 *
@@ -499,11 +507,13 @@ int main(int argc, char* argv[])
 	float* alphas;
 	float *kernel;
 	float *xd, *kd;
+	double start, elapsed;
 	if (argc < 8) {
 		printf("%s data_file model_file data_size data_dim C gamma eps\n", argv[0]);
 		exit(-1);
 	}
 	
+	start = seconds();
 	size = atoi(argv[3]);
 	dim = atoi(argv[4]);
 	C = atof(argv[5]);
@@ -536,7 +546,6 @@ int main(int argc, char* argv[])
 	//for (i = 0; i < size; i++) {
 	//	printf("(%d %d): %f\n", i, 0, kernel[i*size+0]);
 	//}
-	
 	/* save the result */
 	save_model(argv[2], alphas, x, y, gamma, size, dim);
 
@@ -549,6 +558,9 @@ int main(int argc, char* argv[])
 	
 	// reset device
     CHECK(cudaDeviceReset());
+	
+	elapsed = seconds() - start;
+	printf("The total elapsed time is %lf seconds\n", elapsed);
 	
 	return 0;
 }
