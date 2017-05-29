@@ -480,7 +480,6 @@ void save_model(char* filename, float alphas[], float x[], int y[], float gamma,
 int main(int argc, char* argv[])
 {
 	int size, dim;
-	int k;
 	float* x;
 	int *y;
 	float C;
