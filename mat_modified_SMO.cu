@@ -366,7 +366,7 @@ float* modified_SMO(float X[], int Y[], int size, int dim, float C, float gamma,
 	float b = 0.0;
 	float* alphas;
 	float Err[size];
-	float b_up, b_low, alpha1, alpha2, a1 = 0, a2 = 0, F1 = 0, F2 = 0;
+	float b_up, b_low, a1 = 0, a2 = 0, F1 = 0, F2 = 0;
 	int I_up, I_low, y1 = 0, y2 = 0;
 	int numChanged;
 	float Dual = 0, DualityGap;
@@ -389,25 +389,22 @@ float* modified_SMO(float X[], int Y[], int size, int dim, float C, float gamma,
 
 	while(DualityGap > tau*ABS(Dual) && numChanged != 0)
 	{
-		alpha1 = alphas[I_up];
-		alpha2 = alphas[I_low];		
+		a1_old = alphas[I_up];
+		a2_old = alphas[I_low];	
 		y1 = Y[I_up];
 		y2 = Y[I_low];
 		F1 = Err[I_up];
 		F2 = Err[I_low];
 		
-		numChanged = computeNumChaned(I_up, I_low, alpha1, alpha2, X, y1, y2, F1, F2, dim, size, &Dual, C, gamma, &a1, &a2, K);
-		
-		a1_old = alphas[I_up];
-		a2_old = alphas[I_low];
+		numChanged = computeNumChaned(I_up, I_low, a1_old, a2_old, X, y1, y2, F1, F2, dim, size, &Dual, C, gamma, &a1, &a2, K);
 
 		alphas[I_up] = a1;
 		alphas[I_low] = a2;
 		
 		/* update Err[i] */
 		for (i = 0; i < size; i++) {
-			Err[i] += (alphas[I_up] - a1_old) * Y[I_up] * K[I_up*size+i] 
-				+ (alphas[I_low] - a2_old) * Y[I_low] * K[I_low*size+i];  
+			Err[i] += (a1 - a1_old) * y1 * K[I_up*size+i] 
+				+ (a2 - a2_old) * y2 * K[I_low*size+i];  
 		}
 		
 		computeBupIup(Err, C, alphas, Y, size, &b_up, &I_up);

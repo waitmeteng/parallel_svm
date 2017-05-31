@@ -47,7 +47,7 @@
 /* global variables */
 float eps;
 
-inline double seconds()
+double seconds(void)
 {
     struct timeval tp;
     //struct timezone tzp;
@@ -332,7 +332,7 @@ float* modified_SMO(float X[], int Y[], int size, int dim, float C, float gamma,
 	float b = 0.0;
 	float* alphas;
 	float Err[size];
-	float b_up, b_low, alpha1, alpha2, a1 = 0, a2 = 0, F1 = 0, F2 = 0;
+	float b_up, b_low, a1 = 0, a2 = 0, F1 = 0, F2 = 0;
 	int I_up, I_low, y1 = 0, y2 = 0;
 	int numChanged;
 	float Dual = 0, DualityGap;
@@ -357,19 +357,16 @@ float* modified_SMO(float X[], int Y[], int size, int dim, float C, float gamma,
 
 	while(DualityGap > tau*ABS(Dual) && numChanged != 0)
 	{
-		alpha1 = alphas[I_up];
-		alpha2 = alphas[I_low];		
+		a1_old = alphas[I_up];
+		a2_old = alphas[I_low];	
 		y1 = Y[I_up];
 		y2 = Y[I_low];
 		F1 = Err[I_up];
 		F2 = Err[I_low];
 		
 		s1 = seconds();
-		numChanged = computeNumChaned(I_up, I_low, alpha1, alpha2, X, y1, y2, F1, F2, dim, &Dual, C, gamma, &a1, &a2);
+		numChanged = computeNumChaned(I_up, I_low, a1_old, a2_old, X, y1, y2, F1, F2, dim, &Dual, C, gamma, &a1, &a2);
 		t1 += (seconds() - s1);
-		
-		a1_old = alphas[I_up];
-		a2_old = alphas[I_low];
 
 		alphas[I_up] = a1;
 		alphas[I_low] = a2;
@@ -377,8 +374,8 @@ float* modified_SMO(float X[], int Y[], int size, int dim, float C, float gamma,
 		/* update Err[i] */
 		s2 = seconds();
 		for (i = 0; i < size; i++) {
-			Err[i] += (alphas[I_up] - a1_old) * Y[I_up] * rbf_kernel(X, dim, I_up, i, gamma) 
-				+ (alphas[I_low] - a2_old) * Y[I_low] * rbf_kernel(X, dim, I_low, i, gamma);  
+			Err[i] += (a1 - a1_old) * y1 * rbf_kernel(X, dim, I_up, i, gamma) 
+				+ (a2 - a2_old) * y2 * rbf_kernel(X, dim, I_low, i, gamma);  
 		}
 		t2 += (seconds() - s2);
 		
@@ -396,8 +393,8 @@ float* modified_SMO(float X[], int Y[], int size, int dim, float C, float gamma,
 		//printf("itertion: %d\n", num_iter);
 	}
 	
-	b = (b_low + b_up) / 2;
-	DualityGap = computeDualityGap(Err, C, b, alphas, Y, size);
+	//b = (b_low + b_up) / 2;
+	//DualityGap = computeDualityGap(Err, C, b, alphas, Y, size);
 	printf("computeNumChaned    : %lf secs\n", t1);
 	printf("update f_i          : %lf secs\n", t2);
 	printf("update b_up, b_low  : %lf secs\n", t3);
