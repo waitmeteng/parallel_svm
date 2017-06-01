@@ -7,13 +7,13 @@ function transformMNISTFormatToCSV(file_x, file_y, output_file, num1, num2, tpoi
     j = 1;
     M = zeros(tpoints, size(X,2)+1);
     for i = 1:size(y)
-        if (any(y(i) == num1) && y_plus < tpoints/2)
+        if (any(y(i) == num1))
             M(j, 1) = 1;
             M(j, 2:end) = X(i,:);
             y_plus = y_plus + 1; 
             j = j + 1;
         end
-        if (any(y(i) == num2) && y_minus < tpoints/2)
+        if (any(y(i) == num2))
             M(j, 1) = -1;
             M(j, 2:end) = X(i,:);
             y_minus = y_minus + 1;
