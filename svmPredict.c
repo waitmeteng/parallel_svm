@@ -17,7 +17,7 @@
  *
  * Author: Wei-Hsiang Teng
  * History: 2017/4/27       created
- *	    2017/5/24	    fix the rbf_kernel bug: in K(X_i, X_j), we have to use support vector for X_i, and input test data for X_j
+ *	        2017/5/24	    fix the rbf_kernel bug: in K(X_i, X_j), we have to use support vector for X_i, and input test data for X_j
  */  
 
 #include <string.h> /* for memset */
@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include <sys/time.h> // for estimate elapsed time
 #include <math.h>
-#define STR_SIZE 1000000
+#define STR_SIZE 8192
 #define GET_TIME(now) { \
    struct timeval t; \
    gettimeofday(&t, NULL); \
@@ -58,7 +58,7 @@ float rbf_kernel(float x1[], float x2[], int i, int j, int dim, float gamma)
 	return ker;
 }
 
-float svmPredict(float x1[], float x2[], int y1[], float alphas[], int size, int total_sv, int dim, float gamma)
+float svmPredict(float x1[], float x2[], int y1[], float alphas[], int size, int total_sv, int dim, float gamma, float b)
 {
 	int i, j, result;
 	float dual;
@@ -69,6 +69,7 @@ float svmPredict(float x1[], float x2[], int y1[], float alphas[], int size, int
 		for (j = 0; j < total_sv; j++) {
 			dual +=  alphas[j] * rbf_kernel(x1, x2, i, j, dim, gamma);
 		} 
+		dual += b;
 		result = 1;
 		if (dual < 0)
 			result = -1;
@@ -159,13 +160,12 @@ void read_model(char* file, float x[], float alphas[], int dim, int total_sv)
 int main(int argc, char* argv[])
 {
 	int size, dim, total_sv;
-	int i;
 	float* x1, *x2;
-	float gamma;
+	float gamma, b;
 	int *y1;
 	float* alphas;
 	float accuracy;
-	float start, end;
+	double start, end;
 	
 	if (argc < 5) {
 		printf("%s data_file model_file data_size data_dim\n", argv[0]);
@@ -189,7 +189,7 @@ int main(int argc, char* argv[])
 		printf("can't open file %s\n", argv[2]);
 		exit(-1);
 	}
-	fscanf(fp, "%d %f", &total_sv, &gamma);
+	fscanf(fp, "%d %f %f", &total_sv, &gamma, &b);
 	fclose(fp);
 	x2 = (float *)malloc(total_sv*dim*sizeof(float));
 	memset(x2, 0, sizeof(float)*total_sv*dim);
@@ -197,10 +197,10 @@ int main(int argc, char* argv[])
 	read_model(argv[2], x2, alphas, dim, total_sv);
 	
 	GET_TIME(start);
-	accuracy = svmPredict(x1, x2, y1, alphas, size, total_sv, dim, gamma);
+	accuracy = svmPredict(x1, x2, y1, alphas, size, total_sv, dim, gamma, b);
 	GET_TIME(end);
 	printf("accuracy: %1.5f\n", accuracy);
-
+	printf("elapsed time is %lf seconds\n", end - start);
 	free(y1);
     	free(x2);
 	free(alphas);
