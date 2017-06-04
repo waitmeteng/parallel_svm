@@ -335,7 +335,7 @@ __global__ void Initialization(float* devErr, float* devAlphas, int* devY, int s
  *********************************************************************/
 __global__ void update_fi(float *devErr, float *devX, float a1, float a2, float a1_old, float a2_old, int y1, int y2, int I_up, int I_low, float gamma, int dim, int size) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	float k1, k2;
+	float k1 = 0, k2 = 0;
 	if (i < size) {
 		for (int m = 0; m < dim; m++)
 		{
@@ -386,7 +386,7 @@ void modified_SMO(struct problem* prob)
 	CHECK(cudaMemcpy(devX, prob->x, prob->size * prob->dim * sizeof(float), cudaMemcpyHostToDevice));
 	CHECK(cudaMemcpy(devY, prob->y, prob->size * sizeof(int), cudaMemcpyHostToDevice));
 	
-	dim3 block(256);
+	dim3 block(32);
 	dim3 grid((prob->size + block.x - 1)/block.x);
 	
 	Initialization<<<grid, block>>>(devErr, devAlphas, devY, prob->size);
