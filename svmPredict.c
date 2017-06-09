@@ -18,6 +18,7 @@
  * Author: Wei-Hsiang Teng
  * History: 2017/4/27       created
  *	        2017/5/24	    fix the rbf_kernel bug: in K(X_i, X_j), we have to use support vector for X_i, and input test data for X_j
+ *			2017/6/9        add (predicted number)/(total number) as output
  */  
 
 #include <string.h> /* for memset */
@@ -58,12 +59,11 @@ float rbf_kernel(float x1[], float x2[], int i, int j, int dim, float gamma)
 	return ker;
 }
 
-float svmPredict(float x1[], float x2[], int y1[], float alphas[], int size, int total_sv, int dim, float gamma, float b)
+int svmPredict(float x1[], float x2[], int y1[], float alphas[], int size, int total_sv, int dim, float gamma, float b)
 {
 	int i, j, result;
 	float dual;
 	int num = 0;
-	int iter = 0;
 	for (i = 0; i < size; i++) {
 		dual = 0;
 		for (j = 0; j < total_sv; j++) {
@@ -75,10 +75,9 @@ float svmPredict(float x1[], float x2[], int y1[], float alphas[], int size, int
 			result = -1;
 		if (result == y1[i])
 			num++;
-		printf("iteration: %d\n", iter++);
 	}
 	
-	return ((float)num/size);
+	return num;
 }
 
 void read_data(char* file, float x[], int y[], int size, int dim)
@@ -159,12 +158,11 @@ void read_model(char* file, float x[], float alphas[], int dim, int total_sv)
 
 int main(int argc, char* argv[])
 {
-	int size, dim, total_sv;
+	int size, dim, total_sv, correct_num;
 	float* x1, *x2;
 	float gamma, b;
 	int *y1;
 	float* alphas;
-	float accuracy;
 	double start, end;
 	
 	if (argc < 5) {
@@ -175,6 +173,7 @@ int main(int argc, char* argv[])
 	size = atoi(argv[3]);
 	dim = atoi(argv[4]);
 	
+	GET_TIME(start);
 	x1 = (float *)malloc(size*dim*sizeof(float));
 	memset(x1, 0, sizeof(float)*size*dim);
 	y1 = (int *)malloc(size*sizeof(float));
@@ -196,10 +195,9 @@ int main(int argc, char* argv[])
 	alphas = (float *)malloc(total_sv*sizeof(float));
 	read_model(argv[2], x2, alphas, dim, total_sv);
 	
-	GET_TIME(start);
-	accuracy = svmPredict(x1, x2, y1, alphas, size, total_sv, dim, gamma, b);
+	correct_num = svmPredict(x1, x2, y1, alphas, size, total_sv, dim, gamma, b);
 	GET_TIME(end);
-	printf("accuracy: %1.5f\n", accuracy);
+	printf("accuracy (%d/%d): %1.5f\n", correct_num, size, (float)correct_num/size);
 	printf("elapsed time is %lf seconds\n", end - start);
 	free(y1);
     	free(x2);

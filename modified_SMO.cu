@@ -321,12 +321,11 @@ int computeNumChaned(struct problem* prob,
 /**********************************************************************
  *     Initialize alphas and Err
  *********************************************************************/
-__global__ void Initialization(float* devErr, float* devAlphas, int* devY, int size)
+__global__ void Initialization(float* devErr, int* devY, int size)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < size) {
 		devErr[i] = -1*devY[i];
-		devAlphas[i] = 0.0;
 	}
 }
 
@@ -344,7 +343,7 @@ __global__ void update_fi(float *devErr, float *devX, float a1, float a2, float 
 		}
 		k1 = expf(-1 * gamma * k1);
 		k2 = expf(-1 * gamma * k2);
-		devErr[i] = devErr[i] + (a1 - a1_old) * y1 * k1 + (a2 - a2_old) * y2 * k2;  
+		devErr[i] += (a1 - a1_old) * y1 * k1 + (a2 - a2_old) * y2 * k2;  
 	}
 }
 
@@ -373,7 +372,6 @@ void modified_SMO(struct problem* prob)
 	/* device variables */
 	float* devX;
 	int* devY;
-	float* devAlphas;
 	float* devErr;
 	
 	Err = (float *)malloc(sizeof(float) * prob->size);
@@ -382,18 +380,17 @@ void modified_SMO(struct problem* prob)
 	CHECK(cudaMalloc((void**)&devX, prob->size * prob->dim * sizeof(float)));
 	CHECK(cudaMalloc((void**)&devY, prob->size * sizeof(int)));
 	CHECK(cudaMalloc((void**)&devErr, prob->size * sizeof(float)));
-	CHECK(cudaMalloc((void**)&devAlphas, prob->size * sizeof(float)));
 	CHECK(cudaMemcpy(devX, prob->x, prob->size * prob->dim * sizeof(float), cudaMemcpyHostToDevice));
 	CHECK(cudaMemcpy(devY, prob->y, prob->size * sizeof(int), cudaMemcpyHostToDevice));
 	
 	dim3 block(32);
 	dim3 grid((prob->size + block.x - 1)/block.x);
 	
-	Initialization<<<grid, block>>>(devErr, devAlphas, devY, prob->size);
+	Initialization<<<grid, block>>>(devErr, devY, prob->size);
+	memset(prob->alphas, 0, sizeof(float) * prob->size);
 	
 	/* initialize b_up, I_up, b_low, I_low, DualityGap */
-	CHECK(cudaMemcpy(Err, devErr, prob->size * sizeof(float), cudaMemcpyDeviceToHost)); 
-	CHECK(cudaMemcpy(prob->alphas, devAlphas, prob->size * sizeof(float), cudaMemcpyDeviceToHost)); 
+	CHECK(cudaMemcpy(Err, devErr, prob->size * sizeof(float), cudaMemcpyDeviceToHost));  
 	DualityGap = computeDualityGap(Err, prob);
 	computeBupIup(Err, prob, &b_up, &I_up);
 	computeBlowIlow(Err, prob, &b_low, &I_low);
@@ -410,8 +407,7 @@ void modified_SMO(struct problem* prob)
 		F2 = Err[I_low];
 		numChanged = computeNumChaned(prob, I_up, I_low, a1_old, a2_old, y1, y2, F1, F2, &Dual, &a1, &a2);
 		prob->alphas[I_up] = a1;
-		prob->alphas[I_low] = a2;
-		CHECK(cudaMemcpy(devAlphas, prob->alphas, prob->size * sizeof(float), cudaMemcpyHostToDevice)); 
+		prob->alphas[I_low] = a2; 
 		t1 += (seconds() - s1);
 
 		/* update Err[i] */
@@ -442,7 +438,6 @@ void modified_SMO(struct problem* prob)
 	printf("b = %f\n", prob->b);
 	
 	cudaFree(devErr);
-	cudaFree(devAlphas);
 	cudaFree(devX);
 	cudaFree(devY);
 
