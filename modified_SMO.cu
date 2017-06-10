@@ -436,6 +436,7 @@ void modified_SMO(struct problem* prob)
 	printf("update b_up, b_low  : %lf secs\n", t3);
 	printf("computeDualityGap   : %lf secs\n", t4);
 	printf("b = %f\n", prob->b);
+	printf("block: %d, grid: %d\n", block.x, grid.x);
 	
 	cudaFree(devErr);
 	cudaFree(devX);
