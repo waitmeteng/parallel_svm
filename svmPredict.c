@@ -19,6 +19,7 @@
  * History: 2017/4/27       created
  *	        2017/5/24	    fix the rbf_kernel bug: in K(X_i, X_j), we have to use support vector for X_i, and input test data for X_j
  *			2017/6/9        add (predicted number)/(total number) as output
+ *          2017/6/13       change datatype from float to double
  */  
 
 #include <string.h> /* for memset */
@@ -45,9 +46,9 @@
 * output:      K(X_i, X_j)      
 * 
 */
-float rbf_kernel(float x1[], float x2[], int i, int j, int dim, float gamma)
+double rbf_kernel(double x1[], double x2[], int i, int j, int dim, double gamma)
 {
-	float ker = 0.0;
+	double ker = 0.0;
 	int m;
 
 	for (m = 0; m < dim; m++)
@@ -59,10 +60,10 @@ float rbf_kernel(float x1[], float x2[], int i, int j, int dim, float gamma)
 	return ker;
 }
 
-int svmPredict(float x1[], float x2[], int y1[], float alphas[], int size, int total_sv, int dim, float gamma, float b)
+int svmPredict(double x1[], double x2[], int y1[], double alphas[], int size, int total_sv, int dim, double gamma, double b)
 {
 	int i, j, result;
-	float dual;
+	double dual;
 	int num = 0;
 	for (i = 0; i < size; i++) {
 		dual = 0;
@@ -80,7 +81,7 @@ int svmPredict(float x1[], float x2[], int y1[], float alphas[], int size, int t
 	return num;
 }
 
-void read_data(char* file, float x[], int y[], int size, int dim)
+void read_data(char* file, double x[], int y[], int size, int dim)
 {
 	int i;
 	char s[STR_SIZE];
@@ -109,7 +110,7 @@ void read_data(char* file, float x[], int y[], int size, int dim)
 				token = strtok(NULL, delim);
 			}
 			if (index > 0)
-				sscanf(token, "%f %d", &x[i * dim + index - 1], &pre_index);
+				sscanf(token, "%lf %d", &x[i * dim + index - 1], &pre_index);
 			index = pre_index;
 		    token = strtok(NULL, delim);			
 			cnt++;
@@ -118,7 +119,7 @@ void read_data(char* file, float x[], int y[], int size, int dim)
 	fclose(pFile);
 }
 
-void read_model(char* file, float x[], float alphas[], int dim, int total_sv)
+void read_model(char* file, double x[], double alphas[], int dim, int total_sv)
 {
 	FILE *pFile;
 	int i;
@@ -139,7 +140,7 @@ void read_model(char* file, float x[], float alphas[], int dim, int total_sv)
 		fgets(s, sizeof(s), pFile);
 	        /* get the first token */
 	        token = strtok(s, delim);
-	        sscanf(token, "%f %d", &alphas[i], &index);
+	        sscanf(token, "%lf %d", &alphas[i], &index);
 	        /* walk through other tokens */
 	        while( token != NULL ) 
 	        {
@@ -147,7 +148,7 @@ void read_model(char* file, float x[], float alphas[], int dim, int total_sv)
 				token = strtok(NULL, delim);
 			}
 			if (index > 0)
-				sscanf(token, "%f %d", &x[i * dim + index - 1], &pre_index);
+				sscanf(token, "%lf %d", &x[i * dim + index - 1], &pre_index);
 			index = pre_index;
 		        token = strtok(NULL, delim);			
 			cnt++;
@@ -159,10 +160,10 @@ void read_model(char* file, float x[], float alphas[], int dim, int total_sv)
 int main(int argc, char* argv[])
 {
 	int size, dim, total_sv, correct_num;
-	float* x1, *x2;
-	float gamma, b;
+	double* x1, *x2;
+	double gamma, b;
 	int *y1;
-	float* alphas;
+	double* alphas;
 	double start, end;
 	
 	if (argc < 5) {
@@ -174,9 +175,9 @@ int main(int argc, char* argv[])
 	dim = atoi(argv[4]);
 	
 	GET_TIME(start);
-	x1 = (float *)malloc(size*dim*sizeof(float));
-	memset(x1, 0, sizeof(float)*size*dim);
-	y1 = (int *)malloc(size*sizeof(float));
+	x1 = (double *)malloc(size*dim*sizeof(double));
+	memset(x1, 0, sizeof(double)*size*dim);
+	y1 = (int *)malloc(size*sizeof(double));
 	
 	/* read files */
 	read_data(argv[1], x1, y1, size, dim);
@@ -188,16 +189,16 @@ int main(int argc, char* argv[])
 		printf("can't open file %s\n", argv[2]);
 		exit(-1);
 	}
-	fscanf(fp, "%d %f %f", &total_sv, &gamma, &b);
+	fscanf(fp, "%d %lf %lf", &total_sv, &gamma, &b);
 	fclose(fp);
-	x2 = (float *)malloc(total_sv*dim*sizeof(float));
-	memset(x2, 0, sizeof(float)*total_sv*dim);
-	alphas = (float *)malloc(total_sv*sizeof(float));
+	x2 = (double *)malloc(total_sv*dim*sizeof(double));
+	memset(x2, 0, sizeof(double)*total_sv*dim);
+	alphas = (double *)malloc(total_sv*sizeof(double));
 	read_model(argv[2], x2, alphas, dim, total_sv);
 	
 	correct_num = svmPredict(x1, x2, y1, alphas, size, total_sv, dim, gamma, b);
 	GET_TIME(end);
-	printf("accuracy (%d/%d): %1.5f\n", correct_num, size, (float)correct_num/size);
+	printf("accuracy (%d/%d): %1.5f\n", correct_num, size, (double)correct_num/size);
 	printf("elapsed time is %lf seconds\n", end - start);
 	free(y1);
     	free(x2);

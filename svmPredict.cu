@@ -17,6 +17,7 @@
  *
  * Author: Wei-Hsiang Teng
  * History: 2017/6/9       created
+ *          2017/6/13      change datatype from float to double
  *	        
  */  
 
@@ -57,9 +58,9 @@
 * output:      K(X_i, X_j)      
 * 
 */
-__device__ float rbf_kernel(float x1[], float x2[], int i, int j, int dim, float gamma)
+__device__ double rbf_kernel(double x1[], double x2[], int i, int j, int dim, double gamma)
 {
-	float ker = 0.0;
+	double ker = 0.0;
 	int m;
 
 	for (m = 0; m < dim; m++)
@@ -71,11 +72,11 @@ __device__ float rbf_kernel(float x1[], float x2[], int i, int j, int dim, float
 	return ker;
 }
 
-__global__ void svmPredict(float* devX1, float* devX2, int* devY, float* devAlphas, int size, int total_sv, int dim, float gamma, float b, int* num)
+__global__ void svmPredict(double* devX1, double* devX2, int* devY, double* devAlphas, int size, int total_sv, int dim, double gamma, double b, int* num)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j, result;
-	float dual = 0;
+	double dual = 0;
 	if (i < size) 
 	{
 		for (j = 0; j < total_sv; j++) {
@@ -90,7 +91,7 @@ __global__ void svmPredict(float* devX1, float* devX2, int* devY, float* devAlph
 	}
 }
 
-void read_data(char* file, float x[], int y[], int size, int dim)
+void read_data(char* file, double x[], int y[], int size, int dim)
 {
 	int i;
 	char s[STR_SIZE];
@@ -119,7 +120,7 @@ void read_data(char* file, float x[], int y[], int size, int dim)
 				token = strtok(NULL, delim);
 			}
 			if (index > 0)
-				sscanf(token, "%f %d", &x[i * dim + index - 1], &pre_index);
+				sscanf(token, "%lf %d", &x[i * dim + index - 1], &pre_index);
 			index = pre_index;
 		    token = strtok(NULL, delim);			
 			cnt++;
@@ -128,7 +129,7 @@ void read_data(char* file, float x[], int y[], int size, int dim)
 	fclose(pFile);
 }
 
-void read_model(char* file, float x[], float alphas[], int dim, int total_sv)
+void read_model(char* file, double x[], double alphas[], int dim, int total_sv)
 {
 	FILE *pFile;
 	int i;
@@ -149,7 +150,7 @@ void read_model(char* file, float x[], float alphas[], int dim, int total_sv)
 		fgets(s, sizeof(s), pFile);
 	        /* get the first token */
 	        token = strtok(s, delim);
-	        sscanf(token, "%f %d", &alphas[i], &index);
+	        sscanf(token, "%lf %d", &alphas[i], &index);
 	        /* walk through other tokens */
 	        while( token != NULL ) 
 	        {
@@ -157,7 +158,7 @@ void read_model(char* file, float x[], float alphas[], int dim, int total_sv)
 				token = strtok(NULL, delim);
 			}
 			if (index > 0)
-				sscanf(token, "%f %d", &x[i * dim + index - 1], &pre_index);
+				sscanf(token, "%lf %d", &x[i * dim + index - 1], &pre_index);
 			index = pre_index;
 		        token = strtok(NULL, delim);			
 			cnt++;
@@ -169,17 +170,17 @@ void read_model(char* file, float x[], float alphas[], int dim, int total_sv)
 int main(int argc, char* argv[])
 {
 	int size, dim, total_sv, correct_num;
-	float* x1, *x2;
-	float gamma, b;
+	double* x1, *x2;
+	double gamma, b;
 	int *y1;
-	float* alphas;
+	double* alphas;
 	double start, end;
 	
 	/* device variables */
-	float* devX1;
-	float* devX2;
+	double* devX1;
+	double* devX2;
 	int* devY;
-	float* devAlphas;
+	double* devAlphas;
 	int* devNum;
 	
 	if (argc < 5) {
@@ -191,9 +192,9 @@ int main(int argc, char* argv[])
 	dim = atoi(argv[4]);
 	
 	GET_TIME(start);
-	x1 = (float *)malloc(size*dim*sizeof(float));
-	memset(x1, 0, sizeof(float)*size*dim);
-	y1 = (int *)malloc(size*sizeof(float));
+	x1 = (double *)malloc(size*dim*sizeof(double));
+	memset(x1, 0, sizeof(double)*size*dim);
+	y1 = (int *)malloc(size*sizeof(double));
 	
 	/* read files */
 	read_data(argv[1], x1, y1, size, dim);
@@ -205,23 +206,23 @@ int main(int argc, char* argv[])
 		printf("can't open file %s\n", argv[2]);
 		exit(-1);
 	}
-	fscanf(fp, "%d %f %f", &total_sv, &gamma, &b);
+	fscanf(fp, "%d %lf %lf", &total_sv, &gamma, &b);
 	fclose(fp);
-	x2 = (float *)malloc(total_sv*dim*sizeof(float));
-	memset(x2, 0, sizeof(float)*total_sv*dim);
-	alphas = (float *)malloc(total_sv*sizeof(float));
+	x2 = (double *)malloc(total_sv*dim*sizeof(double));
+	memset(x2, 0, sizeof(double)*total_sv*dim);
+	alphas = (double *)malloc(total_sv*sizeof(double));
 	read_model(argv[2], x2, alphas, dim, total_sv);
 	
 	/* allocate device memory */
-	CHECK(cudaMalloc((void**)&devX1, size * dim * sizeof(float)));
+	CHECK(cudaMalloc((void**)&devX1, size * dim * sizeof(double)));
 	CHECK(cudaMalloc((void**)&devY, size * sizeof(int)));
 	CHECK(cudaMalloc((void**)&devNum, sizeof(int)));
-	CHECK(cudaMemcpy(devX1, x1, size * dim * sizeof(float), cudaMemcpyHostToDevice));
+	CHECK(cudaMemcpy(devX1, x1, size * dim * sizeof(double), cudaMemcpyHostToDevice));
 	CHECK(cudaMemcpy(devY, y1, size * sizeof(int), cudaMemcpyHostToDevice));
-	CHECK(cudaMalloc((void**)&devX2, total_sv * dim * sizeof(float)));
-	CHECK(cudaMalloc((void**)&devAlphas, total_sv * sizeof(float)));
-	CHECK(cudaMemcpy(devX2, x2, total_sv * dim * sizeof(float), cudaMemcpyHostToDevice));
-	CHECK(cudaMemcpy(devAlphas, alphas, total_sv * sizeof(float), cudaMemcpyHostToDevice));
+	CHECK(cudaMalloc((void**)&devX2, total_sv * dim * sizeof(double)));
+	CHECK(cudaMalloc((void**)&devAlphas, total_sv * sizeof(double)));
+	CHECK(cudaMemcpy(devX2, x2, total_sv * dim * sizeof(double), cudaMemcpyHostToDevice));
+	CHECK(cudaMemcpy(devAlphas, alphas, total_sv * sizeof(double), cudaMemcpyHostToDevice));
 	
 	dim3 block(32);
 	dim3 grid((size + block.x - 1)/block.x);
@@ -229,7 +230,7 @@ int main(int argc, char* argv[])
 	svmPredict<<<grid, block>>>(devX1, devX2, devY, devAlphas, size, total_sv, dim, gamma, b, devNum);
 	CHECK(cudaMemcpy(&correct_num, devNum, sizeof(int), cudaMemcpyDeviceToHost));
 	GET_TIME(end);
-	printf("accuracy (%d/%d): %1.5f\n", correct_num, size, (float)correct_num/size);
+	printf("accuracy (%d/%d): %1.5f\n", correct_num, size, (double)correct_num/size);
 	printf("elapsed time is %lf seconds\n", end - start);
 	
 	free(y1);
