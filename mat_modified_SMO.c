@@ -21,6 +21,7 @@
  * History: 2017/5/24       created
  *          2017/5/28       add execution time profiling
  *			2017/6/3		code refactoring
+ *          2017/6/13       change data type float to double
  */  
 #include <stdlib.h>
 #include <stdio.h>
@@ -36,16 +37,16 @@
 
 struct problem
 {
-	float* x;			/* input features */
-	float* alphas;		/* output Lagrangian parameters */
+	double* x;			/* input features */
+	double* alphas;		/* output Lagrangian parameters */
 	int *y;				/* input labels */
 	int size;			/* size of training data set */
 	int	dim;			/* number of dimension of coordinates */
-	float C;			/* regularization parameter */
-	float gamma;		/* parameter for gaussian kernel function */
-	float b;			/* offset of decision boundary */
-	float tau;			/* parameter for divergence */
-	float eps;			/* tolerance */
+	double C;			/* regularization parameter */
+	double gamma;		/* parameter for gaussian kernel function */
+	double b;			/* offset of decision boundary */
+	double tau;			/* parameter for divergence */
+	double eps;			/* tolerance */
 };
 /**
 * name:        seconds
@@ -72,9 +73,9 @@ double seconds(void)
 * output:      matrix K(X_i, X_j)      
 * 
 */
-void rbf_kernel(struct problem* prob, float** K)
+void rbf_kernel(struct problem* prob, double** K)
 {
-	float ker;
+	double ker;
 	int i, j, m;
 	for (i = 0; i < prob->size; i++)
 	{
@@ -100,9 +101,9 @@ void rbf_kernel(struct problem* prob, float** K)
 * output:      DualityGap      
 * 
 */
-float computeDualityGap(float Err[], struct problem* prob)
+double computeDualityGap(double Err[], struct problem* prob)
 {
-	float DualityGap = 0;
+	double DualityGap = 0;
 	int i;
 	
 	for (i = 0; i < prob->size; i++)
@@ -131,7 +132,7 @@ float computeDualityGap(float Err[], struct problem* prob)
 * output:      None      
 * 
 */
-void computeBupIup(float Err[], struct problem* prob, float *b_up, int *I_up)
+void computeBupIup(double Err[], struct problem* prob, double *b_up, int *I_up)
 {
 	int i;
 	*b_up = INT_MAX;
@@ -179,7 +180,7 @@ void computeBupIup(float Err[], struct problem* prob, float *b_up, int *I_up)
 * output:      None      
 * 
 */
-void computeBlowIlow(float Err[], struct problem* prob, float *b_low, int *I_low)
+void computeBlowIlow(double Err[], struct problem* prob, double *b_low, int *I_low)
 {
 	int i;
 	*b_low = INT_MIN;
@@ -235,22 +236,22 @@ void computeBlowIlow(float Err[], struct problem* prob, float *b_low, int *I_low
 int computeNumChaned(struct problem* prob,
 					 int I_up, 
                      int I_low, 
-					 float alpha1, 
-					 float alpha2,  
+					 double alpha1, 
+					 double alpha2,  
 					 int y1, 
 					 int y2, 
-					 float F1, 
-					 float F2, 
-					 float *Dual, 
-					 float* a1, 
-					 float* a2,
-					 float** K)
+					 double F1, 
+					 double F2, 
+					 double *Dual, 
+					 double* a1, 
+					 double* a2,
+					 double** K)
 {
 	if (I_up == I_low) return 0;
 	int s = y1 * y2;
-	float gamma;
-	float L, H, slope, change;
-	float k11, k12, k22, eta;
+	double gamma;
+	double L, H, slope, change;
+	double k11, k12, k22, eta;
 	
 	if (y1 == y2)
 		gamma = alpha1 + alpha2;
@@ -319,21 +320,21 @@ int computeNumChaned(struct problem* prob,
 * output:      None     
 * 
 */
-void modified_SMO(struct problem* prob, float **K)
+void modified_SMO(struct problem* prob, double **K)
 {
 	int i;
 	prob->b = 0.0;
-	float* Err;
-	float b_up, b_low, a1 = 0, a2 = 0, F1 = 0, F2 = 0;
+	double* Err;
+	double b_up, b_low, a1 = 0, a2 = 0, F1 = 0, F2 = 0;
 	int I_up, I_low, y1 = 0, y2 = 0;
 	int numChanged;
-	float Dual = 0, DualityGap;
-	float a1_old, a2_old;
+	double Dual = 0, DualityGap;
+	double a1_old, a2_old;
 	int num_iter = 0;
 	double s1, s2, s3, s4;
 	double t1 = 0, t2 = 0, t3 = 0, t4 = 0;
 	
-	Err = (float *)malloc(sizeof(float) * prob->size);
+	Err = (double *)malloc(sizeof(double) * prob->size);
 	
 	/* initialize alpha, Err, Dual */
 	for (i = 0; i < prob->size; i++) {
@@ -424,7 +425,7 @@ void read_data(char* file, struct problem* prob)
 				token = strtok(NULL, delim);
 			}
 			if (index >= 1 && index <= prob->dim)
-				sscanf(token, "%f %d", &prob->x[i * prob->dim + index - 1], &pre_index);
+				sscanf(token, "%lf %d", &prob->x[i * prob->dim + index - 1], &pre_index);
 			index = pre_index;
 		    token = strtok(NULL, delim);			
 			cnt++;
@@ -449,16 +450,16 @@ void save_model(char* filename, struct problem* prob)
 		if (prob->alphas[i] != 0)
 			total_sv++;
 	}
-	fprintf(pFile, "%d %f %f\n", total_sv, prob->gamma, prob->b);
+	fprintf(pFile, "%d %lf %lf\n", total_sv, prob->gamma, prob->b);
 	
 	for (i = 0; i < prob->size; i++) {
 		if (prob->alphas[i] != 0)
 		{   
-			fprintf(pFile, "%f", prob->alphas[i] * prob->y[i]);
+			fprintf(pFile, "%lf", prob->alphas[i] * prob->y[i]);
 			for (j = 0; j < prob->dim; j++)
 			{
 				if (prob->x[i * prob->dim + j] != 0)
-					fprintf(pFile, " %d:%f", j + 1, prob->x[i * prob->dim + j]);
+					fprintf(pFile, " %d:%lf", j + 1, prob->x[i * prob->dim + j]);
 			}
 			fprintf(pFile, "\n");
 		}	
@@ -472,7 +473,7 @@ int main(int argc, char* argv[])
 {
 	struct problem* prob = (struct problem*)malloc(sizeof(*prob));
 	double start, end;
-	float **kernel;
+	double **kernel;
 	int k;
 	
 	if (argc < 8) {
@@ -486,13 +487,13 @@ int main(int argc, char* argv[])
 	prob->gamma = atof(argv[6]);
 	prob->eps = atof(argv[7]);
 	
-	prob->x = (float *)malloc(prob->size * prob->dim * sizeof(float));
-	memset(prob->x, 0, sizeof(float) * prob->size * prob->dim);
+	prob->x = (double *)malloc(prob->size * prob->dim * sizeof(double));
+	memset(prob->x, 0, sizeof(double) * prob->size * prob->dim);
 	prob->y = (int *)malloc(prob->size * sizeof(int));
-	prob->alphas = (float *)malloc(prob->size * sizeof(float));
-	kernel = (float **)malloc(prob->size * sizeof(float *));
+	prob->alphas = (double *)malloc(prob->size * sizeof(double));
+	kernel = (double **)malloc(prob->size * sizeof(double *));
 	for (k = 0; k < prob->size; k++) {
-		kernel[k] = (float *)malloc(prob->size*sizeof(float));
+		kernel[k] = (double *)malloc(prob->size*sizeof(double));
 		if (kernel[k] == NULL)
 		{
 			printf("malloc fails at %s, %d\n", __func__, __LINE__);

@@ -24,7 +24,7 @@
  *
  * Author: Wei-Hsiang Teng
  * History:   2017/6/2        created
- *
+ *            2017/6/13       change data type float to double
  */  
 
 #include <stdlib.h>
@@ -52,16 +52,16 @@
 
 struct problem
 {
-	float* x;			/* input features */
-	float* alphas;		/* output Lagrangian parameters */
+	double* x;			/* input features */
+	double* alphas;		/* output Lagrangian parameters */
 	int *y;				/* input labels */
 	int size;			/* size of training data set */
 	int	dim;			/* number of dimension of coordinates */
-	float C;			/* regularization parameter */
-	float gamma;		/* parameter for gaussian kernel function */
-	float b;			/* offset of decision boundary */
-	float tau;			/* parameter for divergence */
-	float eps;			/* tolerance */
+	double C;			/* regularization parameter */
+	double gamma;		/* parameter for gaussian kernel function */
+	double b;			/* offset of decision boundary */
+	double tau;			/* parameter for divergence */
+	double eps;			/* tolerance */
 };
 /**
 * name:        seconds
@@ -86,9 +86,9 @@ double seconds(void)
 * output:      K(X_i, X_j)      
 * 
 */
-float rbf_kernel(struct problem* prob, int i, int j)
+double rbf_kernel(struct problem* prob, int i, int j)
 {
-	float ker = 0.0;
+	double ker = 0.0;
 	int m;
 	
 	for (m = 0; m < prob->dim; m++)
@@ -110,9 +110,9 @@ float rbf_kernel(struct problem* prob, int i, int j)
 * output:      DualityGap      
 * 
 */
-float computeDualityGap(float Err[], struct problem* prob)
+double computeDualityGap(double Err[], struct problem* prob)
 {
-	float DualityGap = 0;
+	double DualityGap = 0;
 	int i;
 	
 	for (i = 0; i < prob->size; i++)
@@ -141,7 +141,7 @@ float computeDualityGap(float Err[], struct problem* prob)
 * output:      None      
 * 
 */
-void computeBupIup(float Err[], struct problem* prob, float *b_up, int *I_up)
+void computeBupIup(double Err[], struct problem* prob, double *b_up, int *I_up)
 {
 	int i;
 	*b_up = INT_MAX;
@@ -189,7 +189,7 @@ void computeBupIup(float Err[], struct problem* prob, float *b_up, int *I_up)
 * output:      None      
 * 
 */
-void computeBlowIlow(float Err[], struct problem* prob, float *b_low, int *I_low)
+void computeBlowIlow(double Err[], struct problem* prob, double *b_low, int *I_low)
 {
 	int i;
 	*b_low = INT_MIN;
@@ -245,21 +245,21 @@ void computeBlowIlow(float Err[], struct problem* prob, float *b_low, int *I_low
 int computeNumChaned(struct problem* prob,
 					 int I_up, 
                      int I_low, 
-					 float alpha1, 
-					 float alpha2,  
+					 double alpha1, 
+					 double alpha2,  
 					 int y1, 
 					 int y2, 
-					 float F1, 
-					 float F2, 
-					 float *Dual, 
-					 float* a1, 
-					 float* a2)
+					 double F1, 
+					 double F2, 
+					 double *Dual, 
+					 double* a1, 
+					 double* a2)
 {
 	if (I_up == I_low) return 0;
 	int s = y1 * y2;
-	float gamma;
-	float L, H, slope, change;
-	float k11, k12, k22, eta;
+	double gamma;
+	double L, H, slope, change;
+	double k11, k12, k22, eta;
 	
 	if (y1 == y2)
 		gamma = alpha1 + alpha2;
@@ -321,7 +321,7 @@ int computeNumChaned(struct problem* prob,
 /**********************************************************************
  *     Initialize alphas and Err
  *********************************************************************/
-__global__ void Initialization(float* devErr, int* devY, int size)
+__global__ void Initialization(double* devErr, int* devY, int size)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i < size) {
@@ -332,17 +332,17 @@ __global__ void Initialization(float* devErr, int* devY, int size)
 /**********************************************************************
  *     Update f_i
  *********************************************************************/
-__global__ void update_fi(float *devErr, float *devX, float a1, float a2, float a1_old, float a2_old, int y1, int y2, int I_up, int I_low, float gamma, int dim, int size) {
+__global__ void update_fi(double *devErr, double *devX, double a1, double a2, double a1_old, double a2_old, int y1, int y2, int I_up, int I_low, double gamma, int dim, int size) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	float k1 = 0, k2 = 0;
+	double k1 = 0, k2 = 0;
 	if (i < size) {
 		for (int m = 0; m < dim; m++)
 		{
 			k1 += (devX[I_up * dim + m] - devX[i * dim + m]) * (devX[I_up * dim + m] - devX[i * dim + m]);
 			k2 += (devX[I_low * dim + m] - devX[i * dim + m]) * (devX[I_low * dim + m] - devX[i * dim + m]);
 		}
-		k1 = expf(-1 * gamma * k1);
-		k2 = expf(-1 * gamma * k2);
+		k1 = exp(-1 * gamma * k1);
+		k2 = exp(-1 * gamma * k2);
 		devErr[i] += (a1 - a1_old) * y1 * k1 + (a2 - a2_old) * y2 * k2;  
 	}
 }
@@ -359,38 +359,38 @@ __global__ void update_fi(float *devErr, float *devX, float a1, float a2, float 
 void modified_SMO(struct problem* prob)
 {
 	prob->b = 0.0;
-	float* Err;
-	float b_up, b_low, a1 = 0, a2 = 0, F1 = 0, F2 = 0;
+	double* Err;
+	double b_up, b_low, a1 = 0, a2 = 0, F1 = 0, F2 = 0;
 	int I_up, I_low, y1 = 0, y2 = 0;
 	int numChanged;
-	float Dual = 0, DualityGap;
-	float a1_old, a2_old;
+	double Dual = 0, DualityGap;
+	double a1_old, a2_old;
 	int num_iter = 0;
 	double s1, s2, s3, s4;
 	double t1 = 0, t2 = 0, t3 = 0, t4 = 0;
 
 	/* device variables */
-	float* devX;
+	double* devX;
 	int* devY;
-	float* devErr;
+	double* devErr;
 	
-	Err = (float *)malloc(sizeof(float) * prob->size);
+	Err = (double *)malloc(sizeof(double) * prob->size);
 	
 	/* allocate device memory */
-	CHECK(cudaMalloc((void**)&devX, prob->size * prob->dim * sizeof(float)));
+	CHECK(cudaMalloc((void**)&devX, prob->size * prob->dim * sizeof(double)));
 	CHECK(cudaMalloc((void**)&devY, prob->size * sizeof(int)));
-	CHECK(cudaMalloc((void**)&devErr, prob->size * sizeof(float)));
-	CHECK(cudaMemcpy(devX, prob->x, prob->size * prob->dim * sizeof(float), cudaMemcpyHostToDevice));
+	CHECK(cudaMalloc((void**)&devErr, prob->size * sizeof(double)));
+	CHECK(cudaMemcpy(devX, prob->x, prob->size * prob->dim * sizeof(double), cudaMemcpyHostToDevice));
 	CHECK(cudaMemcpy(devY, prob->y, prob->size * sizeof(int), cudaMemcpyHostToDevice));
 	
 	dim3 block(32);
 	dim3 grid((prob->size + block.x - 1)/block.x);
 	
 	Initialization<<<grid, block>>>(devErr, devY, prob->size);
-	memset(prob->alphas, 0, sizeof(float) * prob->size);
+	memset(prob->alphas, 0, sizeof(double) * prob->size);
 	
 	/* initialize b_up, I_up, b_low, I_low, DualityGap */
-	CHECK(cudaMemcpy(Err, devErr, prob->size * sizeof(float), cudaMemcpyDeviceToHost));  
+	CHECK(cudaMemcpy(Err, devErr, prob->size * sizeof(double), cudaMemcpyDeviceToHost));  
 	DualityGap = computeDualityGap(Err, prob);
 	computeBupIup(Err, prob, &b_up, &I_up);
 	computeBlowIlow(Err, prob, &b_low, &I_low);
@@ -413,7 +413,7 @@ void modified_SMO(struct problem* prob)
 		/* update Err[i] */
 		s2 = seconds();
 		update_fi<<<grid, block>>>(devErr, devX, a1, a2, a1_old, a2_old, y1, y2, I_up, I_low, prob->gamma, prob->dim, prob->size);
-		CHECK(cudaMemcpy(Err, devErr, prob->size * sizeof(float), cudaMemcpyDeviceToHost)); 
+		CHECK(cudaMemcpy(Err, devErr, prob->size * sizeof(double), cudaMemcpyDeviceToHost)); 
 		t2 += (seconds() - s2);
 		
 		s3 = seconds();
@@ -473,7 +473,7 @@ void read_data(char* file, struct problem* prob)
 				token = strtok(NULL, delim);
 			}
 			if (index >= 1 && index <= prob->dim)
-				sscanf(token, "%f %d", &prob->x[i * prob->dim + index - 1], &pre_index);
+				sscanf(token, "%lf %d", &prob->x[i * prob->dim + index - 1], &pre_index);
 			index = pre_index;
 		    token = strtok(NULL, delim);			
 			cnt++;
@@ -498,16 +498,16 @@ void save_model(char* filename, struct problem* prob)
 		if (prob->alphas[i] != 0)
 			total_sv++;
 	}
-	fprintf(pFile, "%d %f %f\n", total_sv, prob->gamma, prob->b);
+	fprintf(pFile, "%d %lf %lf\n", total_sv, prob->gamma, prob->b);
 	
 	for (i = 0; i < prob->size; i++) {
 		if (prob->alphas[i] != 0)
 		{   
-			fprintf(pFile, "%f", prob->alphas[i] * prob->y[i]);
+			fprintf(pFile, "%lf", prob->alphas[i] * prob->y[i]);
 			for (j = 0; j < prob->dim; j++)
 			{
 				if (prob->x[i * prob->dim + j] != 0)
-					fprintf(pFile, " %d:%f", j + 1, prob->x[i * prob->dim + j]);
+					fprintf(pFile, " %d:%lf", j + 1, prob->x[i * prob->dim + j]);
 			}
 			fprintf(pFile, "\n");
 		}	
@@ -533,10 +533,10 @@ int main(int argc, char* argv[])
 	prob->gamma = atof(argv[6]);
 	prob->eps = atof(argv[7]);
 
-	prob->x = (float *)malloc(prob->size * prob->dim * sizeof(float));
-	memset(prob->x, 0, sizeof(float) * prob->size * prob->dim);
+	prob->x = (double *)malloc(prob->size * prob->dim * sizeof(double));
+	memset(prob->x, 0, sizeof(double) * prob->size * prob->dim);
 	prob->y = (int *)malloc(prob->size * sizeof(int));
-	prob->alphas = (float *)malloc(prob->size * sizeof(float));
+	prob->alphas = (double *)malloc(prob->size * sizeof(double));
 	
 	read_data(argv[1], prob);
 

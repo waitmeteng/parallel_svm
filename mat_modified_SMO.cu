@@ -20,7 +20,8 @@
  * Author: Wei-Hsiang Teng
  * History: 2017/5/25       created
  *			2017/5/27		use the shared memory of GPU to speed up the calculation.
- *          2017/6/3        code refactoring       
+ *          2017/6/3        code refactoring   
+ *          2017/6/13       change data type float to double 
  */  
 #include <stdlib.h>
 #include <stdio.h>
@@ -48,16 +49,16 @@
 
 struct problem
 {
-	float* x;			/* input features */
-	float* alphas;		/* output Lagrangian parameters */
+	double* x;			/* input features */
+	double* alphas;		/* output Lagrangian parameters */
 	int *y;				/* input labels */
 	int size;			/* size of training data set */
 	int	dim;			/* number of dimension of coordinates */
-	float C;			/* regularization parameter */
-	float gamma;		/* parameter for gaussian kernel function */
-	float b;			/* offset of decision boundary */
-	float tau;			/* parameter for divergence */
-	float eps;			/* tolerance */
+	double C;			/* regularization parameter */
+	double gamma;		/* parameter for gaussian kernel function */
+	double b;			/* offset of decision boundary */
+	double tau;			/* parameter for divergence */
+	double eps;			/* tolerance */
 };
 
 /**
@@ -77,13 +78,13 @@ double seconds(void)
 /**********************************************************************
  *     calculate kernel function parallelly
  *********************************************************************/
-__global__ void rbf_kernel(float* devX, float* devK, int dim, int size, float gamma)
+__global__ void rbf_kernel(double* devX, double* devK, int dim, int size, double gamma)
 {
 #if 0
 	int tx = threadIdx.x + blockIdx.x * blockDim.x;
 	int ty = threadIdx.y + blockIdx.y * blockDim.y;
 	
-	float ker = 0;
+	double ker = 0;
 	
 	for (int k = 0; k < dim; k++)
 	{
@@ -93,8 +94,8 @@ __global__ void rbf_kernel(float* devX, float* devK, int dim, int size, float ga
 	//if (ty == 0)
 	//	printf("(%d %d): %f\n", tx, ty, devK[tx * size + ty]);
 #else
-	__shared__ float Xs1[TILE_SIZE][TILE_SIZE];
-	__shared__ float Xs2[TILE_SIZE][TILE_SIZE];
+	__shared__ double Xs1[TILE_SIZE][TILE_SIZE];
+	__shared__ double Xs2[TILE_SIZE][TILE_SIZE];
 
 	int bx = blockIdx.x;
 	int by = blockIdx.y;
@@ -104,7 +105,7 @@ __global__ void rbf_kernel(float* devX, float* devK, int dim, int size, float ga
 	int Row = by * TILE_SIZE + ty;
 	int Col = bx * TILE_SIZE + tx;
 
-	float ker = 0;
+	double ker = 0;
 	for (int m = 0; m < dim / TILE_SIZE; m++) {
 		Xs1[ty][tx] = devX[Row * dim + (m * TILE_SIZE + tx)];
 		Xs2[ty][tx] = devX[Col * dim + (m * TILE_SIZE + ty)];
@@ -128,9 +129,9 @@ __global__ void rbf_kernel(float* devX, float* devK, int dim, int size, float ga
 * output:      DualityGap      
 * 
 */
-float computeDualityGap(float Err[], struct problem* prob)
+double computeDualityGap(double Err[], struct problem* prob)
 {
-	float DualityGap = 0;
+	double DualityGap = 0;
 	int i;
 	
 	for (i = 0; i < prob->size; i++)
@@ -159,7 +160,7 @@ float computeDualityGap(float Err[], struct problem* prob)
 * output:      None      
 * 
 */
-void computeBupIup(float Err[], struct problem* prob, float *b_up, int *I_up)
+void computeBupIup(double Err[], struct problem* prob, double *b_up, int *I_up)
 {
 	int i;
 	*b_up = INT_MAX;
@@ -207,7 +208,7 @@ void computeBupIup(float Err[], struct problem* prob, float *b_up, int *I_up)
 * output:      None      
 * 
 */
-void computeBlowIlow(float Err[], struct problem* prob, float *b_low, int *I_low)
+void computeBlowIlow(double Err[], struct problem* prob, double *b_low, int *I_low)
 {
 	int i;
 	*b_low = INT_MIN;
@@ -264,22 +265,22 @@ void computeBlowIlow(float Err[], struct problem* prob, float *b_low, int *I_low
 int computeNumChaned(struct problem* prob,
 					 int I_up, 
                      int I_low, 
-					 float alpha1, 
-					 float alpha2,  
+					 double alpha1, 
+					 double alpha2,  
 					 int y1, 
 					 int y2, 
-					 float F1, 
-					 float F2, 
-					 float *Dual, 
-					 float* a1, 
-					 float* a2,
-					 float* K)
+					 double F1, 
+					 double F2, 
+					 double *Dual, 
+					 double* a1, 
+					 double* a2,
+					 double* K)
 {
 	if (I_up == I_low) return 0;
 	int s = y1 * y2;
-	float gamma;
-	float L, H, slope, change;
-	float k11, k12, k22, eta;
+	double gamma;
+	double L, H, slope, change;
+	double k11, k12, k22, eta;
 	
 	if (y1 == y2)
 		gamma = alpha1 + alpha2;
@@ -347,19 +348,19 @@ int computeNumChaned(struct problem* prob,
 * output:      None     
 * 
 */
-void modified_SMO(struct problem* prob, float *K)
+void modified_SMO(struct problem* prob, double *K)
 {
 	int i;
 	prob->b = 0.0;
-	float* Err;
-	float b_up, b_low, a1 = 0, a2 = 0, F1 = 0, F2 = 0;
+	double* Err;
+	double b_up, b_low, a1 = 0, a2 = 0, F1 = 0, F2 = 0;
 	int I_up, I_low, y1 = 0, y2 = 0;
 	int numChanged;
-	float Dual = 0, DualityGap;
-	float a1_old, a2_old;
+	double Dual = 0, DualityGap;
+	double a1_old, a2_old;
 	int num_iter = 0;
 	
-	Err = (float *)malloc(sizeof(float) * prob->size);
+	Err = (double *)malloc(sizeof(double) * prob->size);
 	
 	/* initialize alpha, Err, Dual */
 	for (i = 0; i < prob->size; i++) {
@@ -434,7 +435,7 @@ void read_data(char* file, struct problem* prob)
 				token = strtok(NULL, delim);
 			}
 			if (index >= 1 && index <= prob->dim)
-				sscanf(token, "%f %d", &prob->x[i * prob->dim + index - 1], &pre_index);
+				sscanf(token, "%lf %d", &prob->x[i * prob->dim + index - 1], &pre_index);
 			index = pre_index;
 		    token = strtok(NULL, delim);			
 			cnt++;
@@ -459,16 +460,16 @@ void save_model(char* filename, struct problem* prob)
 		if (prob->alphas[i] != 0)
 			total_sv++;
 	}
-	fprintf(pFile, "%d %f %f\n", total_sv, prob->gamma, prob->b);
+	fprintf(pFile, "%d %lf %lf\n", total_sv, prob->gamma, prob->b);
 	
 	for (i = 0; i < prob->size; i++) {
 		if (prob->alphas[i] != 0)
 		{   
-			fprintf(pFile, "%f", prob->alphas[i] * prob->y[i]);
+			fprintf(pFile, "%lf", prob->alphas[i] * prob->y[i]);
 			for (j = 0; j < prob->dim; j++)
 			{
 				if (prob->x[i * prob->dim + j] != 0)
-					fprintf(pFile, " %d:%f", j + 1, prob->x[i * prob->dim + j]);
+					fprintf(pFile, " %d:%lf", j + 1, prob->x[i * prob->dim + j]);
 			}
 			fprintf(pFile, "\n");
 		}	
@@ -482,11 +483,11 @@ void save_model(char* filename, struct problem* prob)
 int main(int argc, char* argv[])
 {
 	struct problem* prob = (struct problem*)malloc(sizeof(*prob));
-	float *kernel;
+	double *kernel;
 	double start, elapsed;
 	
 	/* device variables */
-	float *xd, *kd;
+	double *xd, *kd;
 	
 	if (argc < 8) {
 		printf("%s data_file model_file data_size data_dim C gamma eps\n", argv[0]);
@@ -500,23 +501,23 @@ int main(int argc, char* argv[])
 	prob->gamma = atof(argv[6]);
 	prob->eps = atof(argv[7]);
 	
-	prob->x = (float *)malloc(prob->size * prob->dim * sizeof(float));
-	memset(prob->x, 0, sizeof(float) * prob->size * prob->dim);
+	prob->x = (double *)malloc(prob->size * prob->dim * sizeof(double));
+	memset(prob->x, 0, sizeof(double) * prob->size * prob->dim);
 	prob->y = (int *)malloc(prob->size * sizeof(int));
-	prob->alphas = (float *)malloc(prob->size * sizeof(float));
-	kernel = (float *)malloc(prob->size * prob->size * sizeof(float));
+	prob->alphas = (double *)malloc(prob->size * sizeof(double));
+	kernel = (double *)malloc(prob->size * prob->size * sizeof(double));
 	if (kernel == NULL)
 	{
 		printf("malloc fails at %s, %d\n", __func__, __LINE__);
 		exit(-1);
 	}
 	
-	CHECK(cudaMalloc((void **)&xd, prob->size * prob->dim * sizeof(float)));
-	CHECK(cudaMalloc((void **)&kd, prob->size * prob->size * sizeof(float)));
+	CHECK(cudaMalloc((void **)&xd, prob->size * prob->dim * sizeof(double)));
+	CHECK(cudaMalloc((void **)&kd, prob->size * prob->size * sizeof(double)));
 	
 	read_data(argv[1], prob);
 	
-	CHECK(cudaMemcpy(xd, prob->x, prob->size * prob->dim * sizeof(float), cudaMemcpyHostToDevice));
+	CHECK(cudaMemcpy(xd, prob->x, prob->size * prob->dim * sizeof(double), cudaMemcpyHostToDevice));
 	
 	/* start the SMO algorithm */
 	prob->tau = 0.000001;
@@ -527,7 +528,7 @@ int main(int argc, char* argv[])
 	
 	rbf_kernel<<<grid, block>>>(xd, kd, prob->dim, prob->size, prob->gamma);
 	CHECK(cudaDeviceSynchronize());
-	CHECK(cudaMemcpy(kernel, kd, prob->size * prob->size * sizeof(float), cudaMemcpyDeviceToHost));
+	CHECK(cudaMemcpy(kernel, kd, prob->size * prob->size * sizeof(double), cudaMemcpyDeviceToHost));
 	modified_SMO(prob, kernel);
 	//for (i = 0; i < size; i++) {
 	//	printf("(%d %d): %f\n", i, 0, kernel[i*size+0]);
